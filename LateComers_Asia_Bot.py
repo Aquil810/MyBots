@@ -1,5 +1,4 @@
-import re
-import sqlite3
+import re, sqlite3
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
@@ -8,9 +7,10 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-BOT_TOKEN = "8117959696:AAELzqVpboKTqwwuTPPr0b7fpw5bjicBg48"
+BOT_TOKEN = "Bot_Token"
 
-##### --- ИНИЦИАЛИЗАЦИЯ ХРАНИЛИЩА --- #####
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher(storage=MemoryStorage())
 
 def init_db():
     conn = sqlite3.connect("late_notes.db")
@@ -21,8 +21,7 @@ def init_db():
         name TEXT NOT NULL,
         date TEXT NOT NULL,
         minutes_late INTEGER NOT NULL
-    )
-    """)
+    )""")
     conn.commit()
     conn.close()
 
@@ -34,8 +33,6 @@ def cleanup_old():
     conn.commit()
     conn.close()
 
-##### --- КНОПКИ --- #####
-
 def main_kb():
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -45,8 +42,7 @@ def main_kb():
         ],
         resize_keyboard=True,
     )
-
-##### --- FSM СОСТОЯНИЯ --- #####
+    
 class Form(StatesGroup):
     waiting_for_late_note = State()
     statistic_wait_name = State()
@@ -55,9 +51,8 @@ class DeleteNote(StatesGroup):
     waiting_for_name = State()
     waiting_for_date = State()
 
-##### --- ХЕЛПЕРЫ --- #####
 def normalize_name(name: str) -> str:
-    name = re.sub(r'\s+', ' ', name.strip())  # убрать лишние пробелы
+    name = re.sub(r'\s+', ' ', name.strip())
     name = name.lower()
     name = name.title()
     return name
@@ -67,7 +62,6 @@ def parse_time(text):
     text = text.lower()
     minutes = 0
 
-    # Пример: "2 часа 10 минут", "10 минут", "3 часа", "1 минута"
     hours = re.search(r'(\d+)\s*(?:час|ч)\w*', text)
     mins = re.search(r'(\d+)\s*(?:минут|м)\w*', text)
     if hours:
@@ -75,7 +69,6 @@ def parse_time(text):
     if mins:
         minutes += int(mins.group(1))
     if not (hours or mins):
-        # Возможно указано только в минутах "7"
         try:
             minutes = int(text.strip())
         except Exception:
@@ -83,12 +76,10 @@ def parse_time(text):
     return minutes if minutes > 0 else None
 
 def parse_late_note(text: str):
-    # Ожидаем 3 строки через \n
     if text.count('\n') != 2:
         return None, None, None
     name, date_str, time_str = text.split('\n')
     name = normalize_name(name)
-    # Нормализация даты (вводится в виде 2024-06-26 или 26.06.2024)
     date_str = date_str.strip()
     try:
         if '.' in date_str:
@@ -99,13 +90,11 @@ def parse_late_note(text: str):
             return None, None, None
     except Exception:
         return None, None, None
-    # Нормализация времени опоздания
     minutes = parse_time(time_str.strip())
     if minutes is None:
         return None, None, None
     return name, date_obj.isoformat(), minutes
 
-# Новый метод для запроса и удаления по id
 def delete_late_note_by_id(row_id):
     conn = sqlite3.connect("late_notes.db")
     cursor = conn.cursor()
@@ -113,15 +102,9 @@ def delete_late_note_by_id(row_id):
     conn.commit()
     conn.close()
 
-##### --- AIogram --- #####
-
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
-
 @dp.startup()
 async def on_start(*args, **kwargs):
     print('Бот запущен!')
-
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
@@ -138,7 +121,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
 async def ask_late_note(message: types.Message, state: FSMContext):
     await message.answer(
         "Введите информацию по шаблону:\n"
-        "Фамилия Имя сотрудника\nДата опоздания (например, 2025-07-20 или 20.07.2025)\nВремя опоздания (например, 2 часа 7 минут или 3 минуты)",
+        "Фамилия Имя сотрудника\nДата опоздания (например, 2025-03-20 или 20.03.2025)\nВремя опоздания (например, 2 часа 7 минут или 3 минуты)",
         reply_markup=ReplyKeyboardRemove(),
     )
     await state.set_state(Form.waiting_for_late_note)
@@ -153,7 +136,6 @@ async def process_late_note(message: types.Message, state: FSMContext):
         )
         return
     cleanup_old()
-    # Сохраняем в БД
     conn = sqlite3.connect("late_notes.db")
     cursor = conn.cursor()
     cursor.execute(
@@ -168,7 +150,6 @@ async def process_late_note(message: types.Message, state: FSMContext):
 @dp.message(F.text.in_(["Статистика опозданий", "статистика опозданий", "Стата", "стата"]))
 async def ask_stat_person(message: types.Message, state: FSMContext):
     cleanup_old()
-    # Выбрать уникальные ФИО из базы
     conn = sqlite3.connect("late_notes.db")
     cursor = conn.cursor()
     cursor.execute("SELECT DISTINCT name FROM late_notes")
@@ -177,7 +158,6 @@ async def ask_stat_person(message: types.Message, state: FSMContext):
     if not persons:
         await message.answer("Пока нет данных об опозданиях.", reply_markup=main_kb())
         return
-    # Сделать кнопки ФИО
     kb = ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text=p)] for p in persons],
         resize_keyboard=True,
@@ -205,11 +185,10 @@ async def get_stat_for_name(message: types.Message, state: FSMContext):
     total = sum([x[1] for x in notes])
     msg = f"Статистика опозданий для: {name} (за 2 месяца)\n\n"
     for d, m in notes:
-        # преобразуем дату из 'YYYY-MM-DD' в 'DD.MM.YYYY'
         try:
             formatted_date = datetime.strptime(d, "%Y-%m-%d").strftime("%d.%m.%Y")
         except Exception:
-            formatted_date = d  # если вдруг формат неправильный, оставим как есть
+            formatted_date = d
         msg += f"• {formatted_date}: {m} мин.\n"
     hours, minutes = divmod(total, 60)
     total_str = f"{hours} часов {minutes} минут" if hours > 0 else f"{minutes} мин."
@@ -219,7 +198,6 @@ async def get_stat_for_name(message: types.Message, state: FSMContext):
 
 @dp.message(lambda m: m.text.lower() in ["удалить опоздание"])
 async def ask_delete_name(message: types.Message, state: FSMContext):
-    # Получаем уникальный список сотрудников
     conn = sqlite3.connect("late_notes.db")
     cursor = conn.cursor()
     cursor.execute("SELECT DISTINCT name FROM late_notes")
@@ -249,7 +227,6 @@ async def ask_delete_date(message: types.Message, state: FSMContext):
         await state.clear()
         return
 
-    # Делаем кнопки вида "20.07.2025 (16 мин)" и сопоставляем к id
     date_btn_to_id = {}
     kb = []
     for row in results:
@@ -277,7 +254,6 @@ async def confirm_delete(message: types.Message, state: FSMContext):
         
 @dp.message(~F.via_bot)
 async def fallback(message: types.Message):
-    # Неизвестная команда вне режима ввода
     await message.answer(
         'Используйте кнопки ниже или команды:\n'
         '• "Внести опоздание"\n'
