@@ -132,7 +132,7 @@ async def process_late_note(message: types.Message, state: FSMContext):
     if None in (name, date_str, minutes):
         await message.answer(
             "⚠️ Формат не распознан. Попробуйте ещё раз по шаблону:\n"
-            "Фамилия Имя сотрудника\nДата опоздания (например, 20.07.2025)\nВремя опоздания (например, 13 минут)"
+            "Фамилия Имя сотрудника\nДата опоздания (например, 20.03.2025)\nВремя опоздания (например, 2 часа 7 минут или 3 минуты)"
         )
         return
     cleanup_old()
@@ -267,3 +267,4 @@ if __name__ == "__main__":
     init_db()
     cleanup_old()
     asyncio.run(dp.start_polling(bot))
+
